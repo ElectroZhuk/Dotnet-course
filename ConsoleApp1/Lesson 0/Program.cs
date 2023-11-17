@@ -7,7 +7,7 @@ using System.IO;
 using System.Linq;
 using System;
 
-class Program
+class ProgramZero
 {
     static void Main(string[] args)
     {
@@ -16,7 +16,7 @@ class Program
         var units = GetUnits(workbook);
         var factories = GetFactories(workbook);
         Console.WriteLine($"Количество резервуаров: {tanks.Length}, установок: {units.Length}");
-
+        
         string tankName = "Резервуар 20";
         Unit foundUnit;
         FindUnit(units, tanks, tankName, out foundUnit);
