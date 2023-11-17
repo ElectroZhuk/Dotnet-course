@@ -9,7 +9,7 @@ using System;
 
 class ProgramZero
 {
-    static void Main(string[] args)
+    public static void Start()
     {
         var workbook = new XLWorkbook("workBook.xlsx");
         var tanks = GetTanks(workbook);
