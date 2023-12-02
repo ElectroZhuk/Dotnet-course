@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OrganizationAPI.Models;
+using OrganizationAPI.Hubs;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,7 +8,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 builder.Services.AddControllers();
-builder.Services.AddDbContext<OrganizationContext>(opt => opt.UseInMemoryDatabase("OrganizationsList"));
+builder.Services.AddRazorPages();
+builder.Services.AddSignalR();
 
 /* Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -25,8 +27,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseStaticFiles();
+
+app.UseRouting();
+
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapRazorPages();
+app.MapHub<OrganizationHub>("/organizationHub");
 
 app.Run();

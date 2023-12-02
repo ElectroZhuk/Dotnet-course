@@ -11,6 +11,8 @@ using System.Text.Json.Serialization;
 using System.Text.Json;
 using NuGet.Common;
 using System.Net.Http.Headers;
+using Microsoft.AspNetCore.SignalR;
+using OrganizationAPI.Hubs;
 
 namespace OrganizationAPI.Controllers
 {
@@ -18,10 +20,12 @@ namespace OrganizationAPI.Controllers
     [ApiController]
     public class OrganizationsController : ControllerBase
     {
+        private IHubContext<OrganizationHub> _hubContext;
         private HttpClient _client;
 
-        public OrganizationsController()
+        public OrganizationsController(IHubContext<OrganizationHub> hubContext)
         {
+            _hubContext = hubContext;
             _client =  new();
             _client.DefaultRequestHeaders.Accept.Clear();
             _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -39,6 +43,21 @@ namespace OrganizationAPI.Controllers
             }
 
             return company;
+        }
+
+        [HttpPost("SendNameBy/{inn}")]
+        public async Task<ActionResult> PostMessageOrganization(string inn)
+        {
+            var company = await GetCompanyAsync(inn);
+
+            if (company == null)
+            {
+                return BadRequest();
+            }
+
+            await _hubContext.Clients.All.SendAsync("ReceiveMessageFromSystem", $"Someone asked me to send you a company with TIN {inn}. Here it is: {company.Name}");
+
+            return Ok();
         }
 
         public record Company([property: JsonPropertyName("value")] string Name);
