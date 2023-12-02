@@ -10,6 +10,6 @@ class Program
 {
     static void Main(string[] args)
     {
-        ProgramOnePointTwo.Start();
+        ConsoleApp.ProgramOnePointTwo.Start();
     }
 }
