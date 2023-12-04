@@ -56,7 +56,7 @@ namespace OrganizationAPI.Controllers
             }
 
             await _hubContext.Clients.All.SendAsync("ReceiveMessageFromSystem", $"Someone asked me to send you a company with TIN {inn}. Here it is: {company.Name}");
-
+            
             return Ok();
         }
 

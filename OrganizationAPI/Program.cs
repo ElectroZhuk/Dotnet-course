@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using OrganizationAPI.Models;
 using OrganizationAPI.Hubs;
-
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
