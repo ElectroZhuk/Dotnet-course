@@ -93,9 +93,15 @@ class ProgramZero
         var cellValue = cell.Value;
 
         if (!cellValue.IsNumber)
-            throw new FormatException($"Cell {cell.WorksheetColumn().ColumnLetter() + cell.WorksheetRow().RowNumber().ToString()} has unexpected type");
+            throw new InvalidCastException($"Cell {cell.WorksheetColumn().ColumnLetter() + cell.WorksheetRow().RowNumber().ToString()} has unexpected type.");
 
-        return (int)cell.Value.GetNumber();
+        double cellNumberValue = cellValue.GetNumber();
+        int cellIntValue = (int)cellNumberValue;
+
+        if (cellIntValue != cellNumberValue)
+            throw new InvalidCastException($"Cell {cell.WorksheetColumn().ColumnLetter() + cell.WorksheetRow().RowNumber().ToString()} is no an integer.");
+
+        return cellIntValue;
     }
 
     public static string GetCellValueString(IXLCell cell)
@@ -104,7 +110,7 @@ class ProgramZero
         string textValue;
 
         if (!cellValue.TryGetText(out textValue))
-            throw new FormatException($"Cell {cell.WorksheetColumn().ColumnLetter() + cell.WorksheetRow().RowNumber().ToString()} has unexpected type");
+            throw new InvalidCastException($"Cell {cell.WorksheetColumn().ColumnLetter() + cell.WorksheetRow().RowNumber().ToString()} has unexpected type.");
 
         return textValue;
     }
@@ -112,10 +118,10 @@ class ProgramZero
     public static IXLWorksheet GetWorksheet(XLWorkbook workbook, int worksheetPosition)
     {
         if (worksheetPosition < 1)
-            throw new ArgumentException("Worksheet position can't be less then 1");
+            throw new ArgumentOutOfRangeException("Worksheet position can't be less then 1.");
 
         if (workbook.Worksheets.Count < worksheetPosition)
-            throw new FormatException($"Excel document has {workbook.Worksheets.Count} worksheets, tried to open {worksheetPosition}");
+            throw new ArgumentOutOfRangeException($"Excel document has {workbook.Worksheets.Count} worksheets, tried to open {worksheetPosition}.");
 
         return workbook.Worksheet(worksheetPosition);
     }
@@ -127,15 +133,27 @@ class ProgramZero
         if (firstCell is null)
             throw new FormatException($"Worksheet {worksheet.Position} is empty");
         else if (firstCell.GetText() != "Id")
-            throw new FormatException("Unexpected value of the first used cell");
+            throw new FormatException("Unexpected value of the first used cell.");
 
         return firstCell;
+    }
+
+    public static XLTablePositioningInfo GetTableInfo(XLWorkbook workbook, int worksheetPosition)
+    {
+        var worksheet = GetWorksheet(workbook, worksheetPosition);
+        var firstCell = GetFirstUsedCell(worksheet);
+        firstCell = firstCell.CellBelow();
+        int firstColumnNumber = firstCell.WorksheetColumn().ColumnNumber();
+        int firstRowNumber = firstCell.WorksheetRow().RowNumber();
+        int rowsRangeCount = firstCell.WorksheetColumn().LastCellUsed().WorksheetRow().RowNumber() - firstRowNumber + 1;
+
+        return new XLTablePositioningInfo(worksheet, firstColumnNumber, firstRowNumber, rowsRangeCount);
     }
 
     public static Tank[] GetTanks()
     {
         Tank[] tanks = {
-            new Tank(1, "Резервуар 1", "Надземный - вертикальный", 1500, 2000, 1),
+            new Tank(1, "Резервуар 1", "Надземный - вертикальный", 1500, 2000, 1).,
             new Tank(2, "Резервуар 2", "Надземный - горизонтальный", 2500, 3000, 1),
             new Tank(3, "Дополнительный резервуар 24", "Надземный - горизонтальный", 3000, 3000, 2),
             new Tank(4, "Резервуар 35", "Надземный - вертикальный", 3000, 3000, 2),
@@ -148,18 +166,17 @@ class ProgramZero
 
     public static Tank[] GetTanks(XLWorkbook workbook)
     {
-        var worksheet = GetWorksheet(workbook, 3);
-        var firstCell = GetFirstUsedCell(worksheet);
-        firstCell = firstCell.CellBelow();
-        int firstColumnNumber = firstCell.WorksheetColumn().ColumnNumber();
-        int firstRowNumber = firstCell.WorksheetRow().RowNumber();
-        int rowsRangeCount = firstCell.WorksheetColumn().LastCellUsed().WorksheetRow().RowNumber() - firstRowNumber + 1;
-        Tank[] tanks = new Tank[rowsRangeCount];
+        var tableInfo = GetTableInfo(workbook, 3);
+        Tank[] tanks = new Tank[tableInfo.RowsRangeCount];
+        typeof(Tank).GetProperties().First().GetCustomAttributes(false);
+        typeof(Tank).GetConstructors().First().GetParameters().First().ParameterType;
+        var tank = new Tank(1, "a", "a", 0, 0, 0);
+        tank.GetType().GetCustomAttributes
 
-        for (int i = 0; i < rowsRangeCount; i++)
+        for (int i = 0; i < tableInfo.RowsRangeCount; i++)
         {
-            int currentRowNumber = firstRowNumber + i;
-            var targetCell = worksheet.Cell(currentRowNumber, firstColumnNumber);
+            int currentRowNumber = tableInfo.FirstRowNumber + i;
+            var targetCell = tableInfo.Worksheet.Cell(currentRowNumber, tableInfo.FirstColumnNumber);
             
             int id = GetCellValueInt(targetCell);
             string name = GetCellValueString(targetCell.CellRight(1));
@@ -243,8 +260,6 @@ class ProgramZero
         return factories;
     }
 
-
-
     public static void PrintTanksFullInfo(Tank[] tanks, Unit[] units, Factory[] factories)
     {
         foreach (Tank tank in tanks)
@@ -289,97 +304,5 @@ class ProgramZero
     public static int GetTotalMaxVolume(Tank[] tanks)
     {
         return tanks.Sum(tank => tank.MaxVolume);
-    }
-}
-
-public interface INameable
-{
-    public string Name { get; }
-}
-
-/// <summary>
-/// Установка
-/// </summary>
-public class Unit : INameable
-{
-    public int Id { get; private set; }
-    public string Name { get; private set; }
-    public string Description { get; private set; }
-    public int FactoryId { get; private set; }
-
-    public Unit(int id, string name, string description, int factoryId)
-    {
-        if (id < 1)
-            throw new ArgumentException("ID cannot be less then 1");
-
-        Id = id;
-        Name = name;
-        Description = description;
-
-        if (factoryId < 1)
-            throw new ArgumentException("Factory ID cannot be less then 1");
-
-        FactoryId = factoryId;
-    }
-}
-
-/// <summary>
-/// Завод
-/// </summary>
-public class Factory : INameable
-{
-    public int Id { get; private set; }
-    public string Name { get; private set; }
-    public string Description { get; private set; }
-
-    public Factory(int id, string name, string description)
-    {
-        if (id < 1)
-            throw new ArgumentException("ID cannot be less then 1");
-
-        Id = id;
-        Name = name;
-        Description = description;
-    }
-}
-
-/// <summary>
-/// Резервуар
-/// </summary>
-public class Tank : INameable
-{
-    public int Id { get; private set; }
-    public string Name { get; private set; }
-    public string Description { get; private set; }
-    public int Volume { get; private set; }
-    public int MaxVolume { get; private set; }
-    public int UnitId { get; private set; }
-
-    public Tank(int id, string name, string description, int volume, int maxVolume, int unitId)
-    {
-        if (id < 1)
-            throw new ArgumentException("ID cannot be less then 1");
-
-        Id = id;
-        Name = name;
-        Description = description;
-
-        if (maxVolume < 0)
-            throw new ArgumentException("Maximum volume cannot be less then 0");
-
-        MaxVolume = maxVolume;
-
-        if (volume < 0)
-            throw new ArgumentException("Volume cannot be less then 0");
-
-        if (volume > maxVolume)
-            throw new ArgumentException("Volume cannot be greater then maximum volume");
-
-        Volume = volume;
-
-        if (unitId < 1)
-            throw new ArgumentException("Unit ID cannot be less then 1");
-
-        UnitId = unitId;
     }
 }
