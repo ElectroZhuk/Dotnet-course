@@ -21,4 +21,12 @@ public class Unit : INameable
 
         FactoryId = factoryId;
     }
+
+    public static bool ValidateID(int id)
+    {
+        if (id < 1)
+            throw new ArgumentOutOfRangeException("Unit ID cannot be less then 1.");
+
+        return true;
+    }
 }
