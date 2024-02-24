@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using ClosedXML.Excel;
 
 public class Tank : INameable
@@ -10,8 +12,7 @@ public class Tank : INameable
     public int MaxVolume { get; private set; }
     public int UnitId { get; private set; }
 
-    public static int XLWorksheetNumber = 3;
-
+    [TableImportable]
     public Tank(int id, string name, string description, int volume, int maxVolume, int unitId)
     {
         ValidateID(id);
@@ -34,14 +35,6 @@ public class Tank : INameable
 
         Unit.ValidateID(unitId);
         UnitId = unitId;
-    }
-
-    [MatchXLConstructor(XLConstructorArgumentsNamesFormat.ToTitleCase)]
-    public Tank(XLCellValue id, XLCellValue name, XLCellValue description, XLCellValue volume, XLCellValue maxVolume, XLCellValue unitId)
-        : this(XLCellValueGetter.GetInt(id), XLCellValueGetter.GetString(name), XLCellValueGetter.GetString(description),
-        XLCellValueGetter.GetInt(volume), XLCellValueGetter.GetInt(maxVolume), XLCellValueGetter.GetInt(unitId))
-    {
-        
     }
 
     public static bool ValidateID(int id)

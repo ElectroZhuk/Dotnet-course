@@ -7,15 +7,16 @@ using System.IO;
 using System.Linq;
 using System;
 using System.Globalization;
+using DocumentFormat.OpenXml.Spreadsheet;
 
 class ProgramZero
 {
     public static void Start()
     {
         var workbook = new XLWorkbook("workBook.xlsx");
-        var tanks = GetTanks(workbook);
-        var units = GetUnits(workbook);
-        var factories = GetFactories(workbook);
+        var tanks = GetFromXL<Tank>(workbook.Worksheet(0));
+        var units = GetFromXL<Unit>(workbook.Worksheet(1));
+        var factories = GetFromXL<Factory>(workbook.Worksheet(2));
         Console.WriteLine($"Количество резервуаров: {tanks.Length}, установок: {units.Length}");
         
         string tankName = "Резервуар 20";
@@ -103,68 +104,76 @@ class ProgramZero
         return tanks;
     }
 
-    public static Tank[] GetTanks(XLWorkbook workbook)
+    public static IEnumerable<T> GetFromXL<T>(IXLWorksheet worksheet)
     {
-        var tableInfo = new XLTablePositioningInfo(workbook, 3);
-        var tableHeaderCells = tableInfo.Worksheet.Cells().Where(cell => cell.Address.RowNumber == tableInfo.FirstRowNumber &&
-            cell.Address.ColumnNumber >= tableInfo.FirstColumnNumber &&
-            cell.Address.ColumnNumber <= tableInfo.Worksheet.Row(tableInfo.FirstRowNumber).LastCellUsed().Address.ColumnNumber);
-        var tableHeaderCellsValues = tableHeaderCells.Select(cell => XLCellValueGetter.GetString(cell.Value));
+        var firstCell = worksheet.FirstCellUsed();
 
-        Tank[] tanks = new Tank[tableInfo.RecordsAmount];
-        var tank = new Tank(1, "a", "a", 0, 0, 0);
+        if (firstCell is null)
+            throw new FormatException($"Worksheet {worksheet.Position} is empty");
 
-        var XLConstructors = typeof(Tank).GetConstructors().Where(
-            constructor => constructor.GetCustomAttributes(false).Any(attribute => attribute is MatchXLConstructorAttribute));
-        foreach (var constructor in XLConstructors)
+        var firstColumnNumber = firstCell.WorksheetColumn().ColumnNumber();
+        var firstRowNumber = firstCell.WorksheetRow().RowNumber();
+        var firstRecordRowNumber = firstRowNumber + 1;
+        var recordsAmount = firstCell.WorksheetColumn().LastCellUsed().WorksheetRow().RowNumber() - firstRowNumber;
+        var tableHeaderCells = worksheet.Cells().Where(cell => cell.Address.RowNumber == firstRowNumber &&
+            cell.Address.ColumnNumber >= firstColumnNumber &&
+            cell.Address.ColumnNumber <= worksheet.Row(firstRowNumber).LastCellUsed().Address.ColumnNumber);
+        IEnumerable<string> tableHeaderCellsValues = new List<string>();
+
+        try
         {
-            var parameters = constructor.GetParameters();
-            XLConstructorArgumentsNamesFormat argumentsFormat = constructor.GetCustomAttributes(false).Where(attribute =>
-                attribute is MatchXLConstructorAttribute).Select(attribute => ((MatchXLConstructorAttribute)attribute).ArgumentsNamesFormat).First();
-            
-            if (parameters.Count() == tableHeaderCellsValues.Count())
+            tableHeaderCellsValues = tableHeaderCells.Select(cell => XLCellValueGetter.GetString(cell.Value));
+        }
+        catch (InvalidCastException exception)
+        {
+            throw new FormatException("Header value has unexpected type.", exception);
+        }
+
+        TableObjectsCreator<T> configuredCreator;
+
+        try
+        {
+            if (!TableObjectsCreator<T>.TryMatch(tableHeaderCellsValues, false, false, out configuredCreator))
+                throw new FormatException($"Worksheet format doesn't matches {typeof(T).Name}.");
+        }
+        catch (ArgumentException exception)
+        {
+            throw new FormatException($"Table header has wrong format.", exception);
+        }
+
+        T[] objects = new T[recordsAmount];
+
+        for (int i = 0; i < recordsAmount; i++)
+        {
+            int currentRowNumber = firstRecordRowNumber + i;
+            var rowFirstCell = worksheet.Cell(currentRowNumber, firstColumnNumber);
+            int parametersAmount = tableHeaderCellsValues.Count();
+            object[] parameters = new object[parametersAmount];
+
+            for (var rowCellIndex = 0; rowCellIndex < parametersAmount; rowCellIndex++)
             {
-                foreach (var parameter in parameters)
+                var checkingCell = rowFirstCell.CellRight(rowCellIndex);
+                var targetType = configuredCreator.GetParameterType(rowCellIndex);
+
+                try
                 {
-                    if (argumentsFormat == XLConstructorArgumentsNamesFormat.NoFormat)
-                    {
-                        tableHeaderCellsValues.Where(headerCellValue => headerCellValue == parameter.Name);
-                    }
-                    else if (argumentsFormat == XLConstructorArgumentsNamesFormat.ToTitleCase)
-                    {
-                        tableHeaderCellsValues.Where(headerCellValue =>
-                            headerCellValue == CultureInfo.CurrentCulture.TextInfo.ToTitleCase(parameter.Name));
-                    }
+                    if (targetType == typeof(int))
+                        parameters[rowCellIndex] = XLCellValueGetter.GetInt(checkingCell.Value);
+                    else if (targetType == typeof(string))
+                        parameters[rowCellIndex] = XLCellValueGetter.GetString(checkingCell.Value);
                     else
-                    {
-                        throw new InvalidOperationException(
-                            string.Format("Constructor Tank(%s) has unexpected arguments format for XL.", 
-                            string.Join(", ", parameters.Select(parameter => parameter.Name).ToArray())));
-                    }
+                        throw new FormatException($"Cell {checkingCell.Address.ColumnLetter + checkingCell.Address.RowNumber.ToString()} in worksheet \"{worksheet.Name}\" has unexpected type. Expected cast to {targetType.Name}.");
+                }
+                catch (InvalidCastException exception)
+                {
+                    throw new FormatException($"Cell {checkingCell.Address.ColumnLetter + checkingCell.Address.RowNumber.ToString()} in worksheet \"{worksheet.Name}\" has unexpected type.", exception);
                 }
             }
+
+            objects[i] = configuredCreator.Create(parameters);
         }
 
-        foreach (var parameter in parameters)
-        {
-            CultureInfo.CurrentCulture.TextInfo.ToTitleCase(parameter.Name);
-        }
-
-        for (int i = 0; i < tableInfo.RecordsAmount; i++)
-        {
-            int currentRowNumber = tableInfo.FirstRowNumber + 1 + i;
-            var targetCell = tableInfo.Worksheet.Cell(currentRowNumber, tableInfo.FirstColumnNumber);
-            
-            int id = GetCellValueInt(targetCell);
-            string name = GetCellValueString(targetCell.CellRight(1));
-            string description = GetCellValueString(targetCell.CellRight(2));
-            int volume = GetCellValueInt(targetCell.CellRight(3));
-            int maxVolume = GetCellValueInt(targetCell.CellRight(4));
-            int unitID = GetCellValueInt(targetCell.CellRight(5));
-            tanks.SetValue(new Tank(id, name, description, volume, maxVolume, unitID), i);
-        }
-
-        return tanks;
+        return objects;
     }
 
     public static Unit[] GetUnits()
@@ -178,61 +187,12 @@ class ProgramZero
         return units;
     }
 
-    public static Unit[] GetUnits(XLWorkbook workbook)
-    {
-        var worksheet = GetWorksheet(workbook, 2);
-        var firstCell = GetFirstUsedCell(worksheet);
-        firstCell = firstCell.CellBelow();
-        int firstColumnNumber = firstCell.WorksheetColumn().ColumnNumber();
-        int firstRowNumber = firstCell.WorksheetRow().RowNumber();
-        int rowsRangeCount = firstCell.WorksheetColumn().LastCellUsed().WorksheetRow().RowNumber() - firstRowNumber + 1;
-        Unit[] units = new Unit[rowsRangeCount];
-
-        for (int i = 0; i < rowsRangeCount; i++)
-        {
-            int currentRowNumber = firstRowNumber + i;
-            var targetCell = worksheet.Cell(currentRowNumber, firstColumnNumber);
-
-            int id = GetCellValueInt(targetCell);
-            string name = GetCellValueString(targetCell.CellRight(1));
-            string description = GetCellValueString(targetCell.CellRight(2));
-            int factoryID = GetCellValueInt(targetCell.CellRight(3));
-            units.SetValue(new Unit(id, name, description, factoryID), i);
-        }
-
-        return units;
-    }
-
     public static Factory[] GetFactories()
     {
         Factory[] factories = {
             new Factory(1, "НПЗ№1", "Первый нефтеперерабатывающий завод"),
             new Factory(2, "НПЗ№2", "Второй нефтеперерабатывающий завод")
         };
-
-        return factories;
-    }
-
-    public static Factory[] GetFactories(XLWorkbook workbook)
-    {
-        var worksheet = GetWorksheet(workbook, 1);
-        var firstCell = GetFirstUsedCell(worksheet);
-        firstCell = firstCell.CellBelow();
-        int firstColumnNumber = firstCell.WorksheetColumn().ColumnNumber();
-        int firstRowNumber = firstCell.WorksheetRow().RowNumber();
-        int rowsRangeCount = firstCell.WorksheetColumn().LastCellUsed().WorksheetRow().RowNumber() - firstRowNumber + 1;
-        Factory[] factories = new Factory[rowsRangeCount];
-
-        for (int i = 0; i < rowsRangeCount; i++)
-        {
-            int currentRowNumber = firstRowNumber + i;
-            var targetCell = worksheet.Cell(currentRowNumber, firstColumnNumber);
-
-            int id = GetCellValueInt(targetCell);
-            string name = GetCellValueString(targetCell.CellRight(1));
-            string description = GetCellValueString(targetCell.CellRight(2));
-            factories.SetValue(new Factory(id, name, description), i);
-        }
 
         return factories;
     }
