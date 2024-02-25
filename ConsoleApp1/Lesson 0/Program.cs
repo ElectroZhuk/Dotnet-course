@@ -8,13 +8,24 @@ using System.Linq;
 using System;
 using System.Globalization;
 using DocumentFormat.OpenXml.Spreadsheet;
+using System.Data.Common;
 
 class ProgramZero
 {
     public static void Start()
     {
         var workbook = new XLWorkbook("workBook.xlsx");
-        var tanks = GetFromXL<Tank>(workbook.Worksheet(0));
+
+        IEnumerable<Tank> tanks = new List<Tank>();
+        try
+        {
+            tanks = GetFromXL<Tank>(workbook.Worksheet(0));
+        }
+        catch (XLFormatException e)
+        {
+            Console.WriteLine($"Something went wrong while parsing tank's from excel: {e.Message}");
+        }
+
         var units = GetFromXL<Unit>(workbook.Worksheet(1));
         var factories = GetFromXL<Factory>(workbook.Worksheet(2));
         Console.WriteLine($"Количество резервуаров: {tanks.Length}, установок: {units.Length}");
@@ -109,7 +120,7 @@ class ProgramZero
         var firstCell = worksheet.FirstCellUsed();
 
         if (firstCell is null)
-            throw new FormatException($"Worksheet {worksheet.Position} is empty");
+            throw new XLFormatException($"Worksheet \"{worksheet.Name}\" is empty");
 
         var firstColumnNumber = firstCell.WorksheetColumn().ColumnNumber();
         var firstRowNumber = firstCell.WorksheetRow().RowNumber();
@@ -120,25 +131,21 @@ class ProgramZero
             cell.Address.ColumnNumber <= worksheet.Row(firstRowNumber).LastCellUsed().Address.ColumnNumber);
         IEnumerable<string> tableHeaderCellsValues = new List<string>();
 
-        try
-        {
-            tableHeaderCellsValues = tableHeaderCells.Select(cell => XLCellValueGetter.GetString(cell.Value));
-        }
-        catch (InvalidCastException exception)
-        {
-            throw new FormatException("Header value has unexpected type.", exception);
-        }
+        if (!tableHeaderCells.All(cell => cell.Value.IsText))
+            throw new XLFormatException($"Table header values {tableHeaderCells.First().Address.ToString(XLReferenceStyle.Default, false)}:{tableHeaderCells.Last().Address.ToString(XLReferenceStyle.Default, false)} on worksheet \"{worksheet.Name}\" has unexpected type.");
+
+        tableHeaderCellsValues = tableHeaderCells.Select(cell => cell.Value.GetText());
 
         TableObjectsCreator<T> configuredCreator;
 
         try
         {
             if (!TableObjectsCreator<T>.TryMatch(tableHeaderCellsValues, false, false, out configuredCreator))
-                throw new FormatException($"Worksheet format doesn't matches {typeof(T).Name}.");
+                throw new XLFormatException($"Worksheet \"{worksheet.Name}\" format doesn't matches {typeof(T).Name}.");
         }
         catch (ArgumentException exception)
         {
-            throw new FormatException($"Table header has wrong format.", exception);
+            throw new XLFormatException($"Table header on worksheet \"{worksheet.Name}\" has wrong format.", exception);
         }
 
         T[] objects = new T[recordsAmount];
@@ -155,18 +162,27 @@ class ProgramZero
                 var checkingCell = rowFirstCell.CellRight(rowCellIndex);
                 var targetType = configuredCreator.GetParameterType(rowCellIndex);
 
-                try
+                if (targetType == typeof(int))
                 {
-                    if (targetType == typeof(int))
-                        parameters[rowCellIndex] = XLCellValueGetter.GetInt(checkingCell.Value);
-                    else if (targetType == typeof(string))
-                        parameters[rowCellIndex] = XLCellValueGetter.GetString(checkingCell.Value);
-                    else
-                        throw new FormatException($"Cell {checkingCell.Address.ColumnLetter + checkingCell.Address.RowNumber.ToString()} in worksheet \"{worksheet.Name}\" has unexpected type. Expected cast to {targetType.Name}.");
+                    int cellIntValue;
+                    
+                    if (!checkingCell.TryGetValue<int>(out cellIntValue))
+                            throw new XLFormatException($"Cell {checkingCell.Address.ToString(XLReferenceStyle.Default, true)} value is not an integer.");
+
+                    parameters[rowCellIndex] = cellIntValue;
                 }
-                catch (InvalidCastException exception)
+                else if (targetType == typeof(string))
                 {
-                    throw new FormatException($"Cell {checkingCell.Address.ColumnLetter + checkingCell.Address.RowNumber.ToString()} in worksheet \"{worksheet.Name}\" has unexpected type.", exception);
+                    string cellStringValue;
+
+                    if (!checkingCell.TryGetValue<string>(out cellStringValue))
+                        throw new XLFormatException($"Cell {checkingCell.Address.ToString(XLReferenceStyle.Default, true)} value is not a text.");
+
+                    parameters[rowCellIndex] = cellStringValue;
+                }
+                else
+                {
+                    throw new XLFormatException($"Cell {checkingCell.Address.ToString(XLReferenceStyle.Default, true)} has unexpected type. Expected cast to {targetType.Name}.");
                 }
             }
 

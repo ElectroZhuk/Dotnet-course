@@ -7,7 +7,7 @@ public static class XLCellValueGetter
     {
         if (!cellValue.IsNumber)
             throw new InvalidCastException($"Cell value \"{cellValue}\" is not a number.");
-
+        
         double cellNumberValue = cellValue.GetNumber();
         int cellIntValue = (int)cellNumberValue;
 
@@ -15,6 +15,24 @@ public static class XLCellValueGetter
             throw new InvalidCastException($"Cell value \"{cellValue}\" is not an integer.");
 
         return cellIntValue;
+    }
+
+    public static bool TryGetInt(XLCellValue cellValue, out int number)
+    {
+        number = 0;
+
+        if (!cellValue.IsNumber)
+            return false;
+
+        double cellNumberValue = cellValue.GetNumber();
+        int cellIntValue = (int)cellNumberValue;
+
+        if (cellIntValue != cellNumberValue)
+            return false;
+
+        number = cellIntValue;
+
+        return true;
     }
 
     public static string GetString(XLCellValue cellValue)
