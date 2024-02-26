@@ -2,6 +2,6 @@
 {
     static void Main(string[] args)
     {
-        ProgramOnePointTwo.Start();
+        ProgramZero.Start();
     }
 }

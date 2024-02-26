@@ -6,9 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System;
-using System.Globalization;
-using DocumentFormat.OpenXml.Spreadsheet;
-using System.Data.Common;
 
 class ProgramZero
 {
@@ -19,16 +16,37 @@ class ProgramZero
         IEnumerable<Tank> tanks = new List<Tank>();
         try
         {
-            tanks = GetFromXL<Tank>(workbook.Worksheet(0));
+            tanks = GetFromXL<Tank>(workbook.Worksheet("Tanks"));
         }
         catch (XLFormatException e)
         {
-            Console.WriteLine($"Something went wrong while parsing tank's from excel: {e.Message}");
+            Console.WriteLine($"Something went wrong while parsing tanks from excel: {e.Message}");
+            return;
         }
 
-        var units = GetFromXL<Unit>(workbook.Worksheet(1));
-        var factories = GetFromXL<Factory>(workbook.Worksheet(2));
-        Console.WriteLine($"Количество резервуаров: {tanks.Length}, установок: {units.Length}");
+        IEnumerable<Unit> units = new List<Unit>();
+        try
+        {
+            units = GetFromXL<Unit>(workbook.Worksheet("Units"));
+        }
+        catch (XLFormatException e)
+        {
+            Console.WriteLine($"Something went wrong while parsing units from excel: {e.Message}");
+            return;
+        }
+
+        IEnumerable<Factory> factories = new List<Factory>();
+        try
+        {
+            factories = GetFromXL<Factory>(workbook.Worksheet("Factories"));
+        }
+        catch (XLFormatException e)
+        {
+            Console.WriteLine($"Something went wrong while parsing factories from excel: {e.Message}");
+            return;
+        }
+
+        Console.WriteLine($"Количество резервуаров: {tanks.Count()}, установок: {units.Count()}");
         
         string tankName = "Резервуар 20";
         Unit foundUnit;
@@ -40,8 +58,21 @@ class ProgramZero
         }
         else
         {
-            var factory = FindFactory(factories, foundUnit);
-            Console.WriteLine($"Резервуар 2 принадлежит установке {foundUnit.Name} и заводу {factory.Name}");
+            try
+            {
+                var factory = FindFactory(factories, foundUnit);
+                Console.WriteLine($"Резервуар 2 принадлежит установке {foundUnit.Name} и заводу {factory.Name}.");
+            }
+            catch (ArgumentNullException)
+            {
+                Console.WriteLine($"Ошибка. Установка с ID={foundUnit.Id} не привязана ни к одному заводу.");
+                return;
+            }
+            catch (InvalidOperationException)
+            {
+                Console.WriteLine($"Ошибка. Установка с ID={foundUnit.Id} привязана к нескольким заводам.");
+                return;
+            }
         }
 
         var totalVolume = GetTotalMaxVolume(tanks);
@@ -58,21 +89,22 @@ class ProgramZero
         if (nameToFind is not null)
         {
             INameable nameable;
+            IEnumerable<INameable> allObjects = factories.Cast<INameable>().Concat(units.Cast<INameable>()).Concat(tanks.Cast<INameable>());
+            FindByName(allObjects, nameToFind, out nameable);
 
-            FindByName(factories, nameToFind, out nameable);
             if (nameable is Factory factory)
                 Console.WriteLine($"Завод {factory.Name}, {factory.Description}");
-
-            FindByName(units, nameToFind, out nameable);
-            if (nameable is Unit unit)
+            else if (nameable is Unit unit)
                 Console.WriteLine($"Установка {unit.Name}, {unit.Description} находится на заводе {FindFactory(factories, unit).Name}");
-
-            FindByName(tanks, nameToFind, out nameable);
-            if (nameable is Tank tank)
+            else if (nameable is Tank tank)
                 Console.WriteLine($"Резервуар {tank.Name}, {tank.Description} (объем {tank.Volume}/{tank.MaxVolume}) в составе установки {FindUnit(units, tank).Name}");
-            
-            if (nameable is null)
+            else if (nameable is null)
                 Console.WriteLine("Не найдено объектов с указанным названием");
+            else
+            {
+                Console.WriteLine("По названию получен неожиданный тип объекта.");
+                return;
+            }
         }
         else
         {
@@ -213,7 +245,7 @@ class ProgramZero
         return factories;
     }
 
-    public static void PrintTanksFullInfo(Tank[] tanks, Unit[] units, Factory[] factories)
+    public static void PrintTanksFullInfo(IEnumerable<Tank> tanks, IEnumerable<Unit> units, IEnumerable<Factory> factories)
     {
         foreach (Tank tank in tanks)
         {
@@ -224,7 +256,7 @@ class ProgramZero
         }
     }
 
-    public static void FindByName(INameable[] nameables, string name, out INameable foundNameable)
+    public static void FindByName(IEnumerable<INameable> nameables, string name, out INameable foundNameable)
     {
         foundNameable = nameables.Where(nameable => nameable.Name == name).SingleOrDefault();
     }
@@ -232,29 +264,29 @@ class ProgramZero
     // реализуйте этот метод, чтобы он возвращал установку (Unit), которой
     // принадлежит резервуар (Tank), найденный в массиве резервуаров по имени
     // учтите, что по заданному имени может быть не найден резервуар
-    public static void FindUnit(Unit[] units, Tank[] tanks, string tankName, out Unit foundUnit)
+    public static void FindUnit(IEnumerable<Unit> units, IEnumerable<Tank> tanks, string tankName, out Unit foundUnit)
     {
         foundUnit = units.Where(unit => unit.Id == tanks.Where(tank => tank.Name == tankName).SingleOrDefault()?.UnitId).SingleOrDefault();
     }
 
-    public static Unit FindUnit(Unit[] units, Tank tank)
+    public static Unit FindUnit(IEnumerable<Unit> units, Tank tank)
     {
         return units.Where(unit => unit.Id == tank.UnitId).Single();
     }
 
     // реализуйте этот метод, чтобы он возвращал объект завода, соответствующий установке
-    public static Factory FindFactory(Factory[] factories, Unit unit)
+    public static Factory FindFactory(IEnumerable<Factory> factories, Unit unit)
     {
         return factories.Where(factory => factory.Id == unit.FactoryId).Single();
     }
 
-    public static int GetTotalCurrentVolume(Tank[] tanks)
+    public static int GetTotalCurrentVolume(IEnumerable<Tank> tanks)
     {
         return tanks.Sum(tank => tank.Volume);
     }
 
     // реализуйте этот метод, чтобы он возвращал суммарный объем резервуаров в массиве
-    public static int GetTotalMaxVolume(Tank[] tanks)
+    public static int GetTotalMaxVolume(IEnumerable<Tank> tanks)
     {
         return tanks.Sum(tank => tank.MaxVolume);
     }

@@ -51,7 +51,7 @@ class TableObjectsCreator<T>
                     tableColumnsPositionInConstructor.Add(constructorParameters.TakeWhile(targetHeaderValue => targetHeaderValue != tableHeaderValue).Count());
                 }
                 
-                if (tableColumnsPositionInConstructor != tableColumnsPositionInConstructor.Distinct())
+                if (tableColumnsPositionInConstructor.Count() != tableColumnsPositionInConstructor.Distinct().Count())
                 {
                     throw new ArgumentException("Multiple table headers correspond to the same index in the constructor.");
                 }
@@ -92,6 +92,6 @@ class TableObjectsCreator<T>
         if (tableColumnIndex > _tableColumnsPositionInConstructor.Count() - 1)
             throw new ArgumentOutOfRangeException(nameof(tableColumnIndex), "Provided table column index out of constructor parameters range.");
 
-        return _targetConstructor.GetParameters()[tableColumnIndex].GetType();
+        return _targetConstructor.GetParameters()[tableColumnIndex].ParameterType;
     }
 }

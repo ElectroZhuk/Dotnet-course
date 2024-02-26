@@ -7,6 +7,7 @@ public class Unit : INameable
     public string Description { get; private set; }
     public int FactoryId { get; private set; }
 
+    [TableImportable]
     public Unit(int id, string name, string description, int factoryId)
     {
         if (id < 1)
