@@ -14,35 +14,17 @@ class ProgramZero
         var workbook = new XLWorkbook("workBook.xlsx");
 
         IEnumerable<Tank> tanks = new List<Tank>();
-        try
-        {
-            tanks = GetFromXL<Tank>(workbook.Worksheet("Tanks"));
-        }
-        catch (XLFormatException e)
-        {
-            Console.WriteLine($"Something went wrong while parsing tanks from excel: {e.Message}");
-            return;
-        }
-
         IEnumerable<Unit> units = new List<Unit>();
-        try
-        {
-            units = GetFromXL<Unit>(workbook.Worksheet("Units"));
-        }
-        catch (XLFormatException e)
-        {
-            Console.WriteLine($"Something went wrong while parsing units from excel: {e.Message}");
-            return;
-        }
-
         IEnumerable<Factory> factories = new List<Factory>();
         try
         {
+            tanks = GetFromXL<Tank>(workbook.Worksheet("Tanks"));
+            units = GetFromXL<Unit>(workbook.Worksheet("Units"));
             factories = GetFromXL<Factory>(workbook.Worksheet("Factories"));
         }
         catch (XLFormatException e)
         {
-            Console.WriteLine($"Something went wrong while parsing factories from excel: {e.Message}");
+            Console.WriteLine($"Something went wrong while parsing from excel: {e.Message}");
             return;
         }
 
@@ -50,65 +32,108 @@ class ProgramZero
         
         string tankName = "Резервуар 20";
         Unit foundUnit;
-        FindUnit(units, tanks, tankName, out foundUnit);
 
-        if (foundUnit is null)
+        try
         {
-            Console.WriteLine($"{tankName} не найден");
-        }
-        else
-        {
+            foundUnit = FindUnit(units, tanks, tankName);
+
             try
             {
                 var factory = FindFactory(factories, foundUnit);
                 Console.WriteLine($"Резервуар 2 принадлежит установке {foundUnit.Name} и заводу {factory.Name}.");
             }
-            catch (ArgumentNullException)
+            catch (Exception e) when (e is ArgumentNullException || e is InvalidOperationException)
             {
-                Console.WriteLine($"Ошибка. Установка с ID={foundUnit.Id} не привязана ни к одному заводу.");
-                return;
-            }
-            catch (InvalidOperationException)
-            {
-                Console.WriteLine($"Ошибка. Установка с ID={foundUnit.Id} привязана к нескольким заводам.");
-                return;
+                Console.WriteLine($"Error when searching for the factory: {e.Message}.");
             }
         }
+        catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
+        {
+            Console.WriteLine($"Error when searching for the unit: {e.Message}.");
+        }
 
-        var totalVolume = GetTotalMaxVolume(tanks);
-        Console.WriteLine($"Общий объем резервуаров: {totalVolume}");
+        try
+        {
+            var totalVolume = GetTotalMaxVolume(tanks);
+            Console.WriteLine($"Общий объем резервуаров: {totalVolume}.");
+        }
+        catch (InvalidOperationException e)
+        {
+            Console.WriteLine($"Error while getting total max tanks capacity: {e.Message}.");
+        }
 
-        PrintTanksFullInfo(tanks, units, factories);
+        try
+        {
+            PrintTanksFullInfo(tanks, units, factories);
+        }
+        catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
+        {
+            Console.WriteLine($"Error while printing tanks full info: {e.Message}.");
+        }
 
-        int totalCurrentVolume = GetTotalCurrentVolume(tanks);
-        Console.WriteLine($"Текущий объем жидкости во всех резервуарах: {totalCurrentVolume}");
+        try
+        {
+            int totalCurrentVolume = GetTotalCurrentVolume(tanks);
+            Console.WriteLine($"Текущий объем жидкости во всех резервуарах: {totalCurrentVolume}.");
+        }
+        catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
+        {
+            Console.WriteLine($"Error while getting total current tanks capacity: {e.Message}.");
+        }
 
         Console.Write("Введите название объекта для поиска: ");
         string nameToFind = Console.ReadLine();
 
         if (nameToFind is not null)
         {
-            INameable nameable;
-            IEnumerable<INameable> allObjects = factories.Cast<INameable>().Concat(units.Cast<INameable>()).Concat(tanks.Cast<INameable>());
-            FindByName(allObjects, nameToFind, out nameable);
-
-            if (nameable is Factory factory)
-                Console.WriteLine($"Завод {factory.Name}, {factory.Description}");
-            else if (nameable is Unit unit)
-                Console.WriteLine($"Установка {unit.Name}, {unit.Description} находится на заводе {FindFactory(factories, unit).Name}");
-            else if (nameable is Tank tank)
-                Console.WriteLine($"Резервуар {tank.Name}, {tank.Description} (объем {tank.Volume}/{tank.MaxVolume}) в составе установки {FindUnit(units, tank).Name}");
-            else if (nameable is null)
-                Console.WriteLine("Не найдено объектов с указанным названием");
-            else
+            try
             {
-                Console.WriteLine("По названию получен неожиданный тип объекта.");
-                return;
+                IEnumerable<INameable> allObjects = factories.Cast<INameable>().Concat(units.Cast<INameable>()).Concat(tanks.Cast<INameable>());
+                var nameables = FindByName(allObjects, nameToFind);
+
+                foreach (var nameable in nameables)
+                {
+                    if (nameable is Factory factory)
+                    {
+                        Console.WriteLine($"Factory {factory.Name}, {factory.Description}.");
+                    }
+                    else if (nameable is Unit unit)
+                    {
+                        try
+                        {
+                            Console.WriteLine($"Unit {unit.Name}, {unit.Description} located on factory {FindFactory(factories, unit).Name}.");
+                        }
+                        catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
+                        {
+                            Console.WriteLine($"Error while getting factory for found unit ID={unit.Id}: {e.Message}");
+                        }
+                    }
+                    else if (nameable is Tank tank)
+                    {
+                        try
+                        {
+                            Console.WriteLine($"Tank {tank.Name}, {tank.Description} (volume {tank.Volume}/{tank.MaxVolume}) in unit {FindUnit(units, tank).Name}.");
+                        }
+                        catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
+                        {
+                            Console.WriteLine($"Error while getting unit for found tank ID={tank.Id}: {e.Message}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("Got unexpected object type for the specified input.");
+                    }
+                }
             }
+            catch (ArgumentException e)
+            {
+                Console.WriteLine($"Error while searching for object: {e.Message}.");
+            }
+
         }
         else
         {
-            Console.WriteLine("Вы не ввели название объекта");
+            Console.WriteLine("The input is empty.");
         }
 
         Dictionary<string, object> savingData = new Dictionary<string, object>() {
@@ -129,22 +154,8 @@ class ProgramZero
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true
             });
-            Console.WriteLine($"Data has been saved to file: {stream.Name}");
+            Console.WriteLine($"Data has been saved to file: {stream.Name}.");
         }
-    }
-
-    public static Tank[] GetTanks()
-    {
-        Tank[] tanks = {
-            new Tank(1, "Резервуар 1", "Надземный - вертикальный", 1500, 2000, 1),
-            new Tank(2, "Резервуар 2", "Надземный - горизонтальный", 2500, 3000, 1),
-            new Tank(3, "Дополнительный резервуар 24", "Надземный - горизонтальный", 3000, 3000, 2),
-            new Tank(4, "Резервуар 35", "Надземный - вертикальный", 3000, 3000, 2),
-            new Tank(5, "Резервуар 47", "Подземный - двустенный", 4000, 5000, 2),
-            new Tank(6, "Резервуар 256", "Подводный", 500, 500, 3)
-        };
-
-        return tanks;
     }
 
     public static IEnumerable<T> GetFromXL<T>(IXLWorksheet worksheet)
@@ -161,15 +172,19 @@ class ProgramZero
         var tableHeaderCells = worksheet.Cells().Where(cell => cell.Address.RowNumber == firstRowNumber &&
             cell.Address.ColumnNumber >= firstColumnNumber &&
             cell.Address.ColumnNumber <= worksheet.Row(firstRowNumber).LastCellUsed().Address.ColumnNumber);
-        IEnumerable<string> tableHeaderCellsValues = new List<string>();
 
-        if (!tableHeaderCells.All(cell => cell.Value.IsText))
-            throw new XLFormatException($"Table header values {tableHeaderCells.First().Address.ToString(XLReferenceStyle.Default, false)}:{tableHeaderCells.Last().Address.ToString(XLReferenceStyle.Default, false)} on worksheet \"{worksheet.Name}\" has unexpected type.");
+        List<string> tableHeaderCellsValues = new ();
+        foreach (var headerCell in tableHeaderCells)
+        {
+            string headerValue;
 
-        tableHeaderCellsValues = tableHeaderCells.Select(cell => cell.Value.GetText());
+            if (!headerCell.TryGetValue<string>(out headerValue))
+                throw new XLFormatException($"Table header value {headerCell.Address.ToString(XLReferenceStyle.Default, true)} has unexpected type.");
+
+            tableHeaderCellsValues.Append(headerValue);
+        }
 
         TableObjectsCreator<T> configuredCreator;
-
         try
         {
             if (!TableObjectsCreator<T>.TryMatch(tableHeaderCellsValues, false, false, out configuredCreator))
@@ -224,70 +239,86 @@ class ProgramZero
         return objects;
     }
 
-    public static Unit[] GetUnits()
-    {
-        Unit[] units = {
-            new Unit(1, "ГФУ-2", "Газофракционирующая установка", 1),
-            new Unit(2, "АВТ-6", "Атмосферно-вакуумная трубчатка", 1),
-            new Unit(3, "АВТ-10", "Атмосферно-вакуумная трубчатка", 2)
-        };
-
-        return units;
-    }
-
-    public static Factory[] GetFactories()
-    {
-        Factory[] factories = {
-            new Factory(1, "НПЗ№1", "Первый нефтеперерабатывающий завод"),
-            new Factory(2, "НПЗ№2", "Второй нефтеперерабатывающий завод")
-        };
-
-        return factories;
-    }
-
     public static void PrintTanksFullInfo(IEnumerable<Tank> tanks, IEnumerable<Unit> units, IEnumerable<Factory> factories)
     {
         foreach (Tank tank in tanks)
         {
-            Unit unit = units.Where(localUnit => localUnit.Id == tank.UnitId).Single();
-            Factory factory = factories.Where(localFactory => localFactory.Id == unit.FactoryId).Single();
+            Unit unit = FindUnit(units, tank);
+            Factory factory = FindFactory(factories, unit);
 
             Console.WriteLine($"{tank.Name}, {tank.Description}: объем - {tank.Volume}/{tank.MaxVolume}; установка - {unit.Name}; завод - {factory.Name}");
         }
     }
 
-    public static void FindByName(IEnumerable<INameable> nameables, string name, out INameable foundNameable)
+    public static IEnumerable<INameable> FindByName(IEnumerable<INameable> nameables, string name)
     {
-        foundNameable = nameables.Where(nameable => nameable.Name == name).SingleOrDefault();
+        var foundNameables = nameables.Where(nameable => nameable.Name == name);
+
+        if (foundNameables.Count() == 0)
+            throw new ArgumentException($"There is no nameables with name \"{name}\".");
+
+        return foundNameables;
     }
 
-    // реализуйте этот метод, чтобы он возвращал установку (Unit), которой
-    // принадлежит резервуар (Tank), найденный в массиве резервуаров по имени
-    // учтите, что по заданному имени может быть не найден резервуар
-    public static void FindUnit(IEnumerable<Unit> units, IEnumerable<Tank> tanks, string tankName, out Unit foundUnit)
+    public static Unit FindUnit(IEnumerable<Unit> units, IEnumerable<Tank> tanks, string tankName)
     {
-        foundUnit = units.Where(unit => unit.Id == tanks.Where(tank => tank.Name == tankName).SingleOrDefault()?.UnitId).SingleOrDefault();
+        IEnumerable<Tank> targetTanks;
+        try
+        {
+            targetTanks = FindByName(tanks, tankName).Cast<Tank>();
+        }
+        catch (ArgumentException e)
+        {
+            throw new ArgumentException($"There is no tanks with name \"{tankName}\".", e);
+        }
+
+        if (targetTanks.Count() > 1)
+            throw new InvalidOperationException($"There are several tanks with name \"{tankName}\".");
+
+        Tank targetTank = targetTanks.ElementAt(0);
+        
+        return FindUnit(units, targetTank);
     }
 
     public static Unit FindUnit(IEnumerable<Unit> units, Tank tank)
     {
-        return units.Where(unit => unit.Id == tank.UnitId).Single();
+        var foundUnits = units.Where(unit => unit.Id == tank.UnitId);
+
+        if (foundUnits.Count() > 1)
+            throw new InvalidOperationException($"Several units correspond to the specified tank ID={tank.Id}.");
+
+        if (foundUnits.Count() == 0)
+            throw new ArgumentException($"None of the units correspond to the specified tank ID={tank.Id}.");
+
+        return foundUnits.ElementAt(0);
     }
 
-    // реализуйте этот метод, чтобы он возвращал объект завода, соответствующий установке
     public static Factory FindFactory(IEnumerable<Factory> factories, Unit unit)
     {
-        return factories.Where(factory => factory.Id == unit.FactoryId).Single();
+        var foundFactories = factories.Where(factory => factory.Id == unit.FactoryId);
+
+        if (foundFactories.Count() > 1)
+            throw new InvalidOperationException($"Several factories correspond to the specified unit ID={unit.Id}.");
+
+        if (foundFactories.Count() == 0)
+            throw new ArgumentException($"None of the factories correspond to the specified unit ID={unit.Id}.");
+
+        return foundFactories.ElementAt(0);
     }
 
     public static int GetTotalCurrentVolume(IEnumerable<Tank> tanks)
     {
+        if (tanks.Count() == 0)
+            throw new InvalidOperationException("Tanks has not been passed.");
+
         return tanks.Sum(tank => tank.Volume);
     }
 
-    // реализуйте этот метод, чтобы он возвращал суммарный объем резервуаров в массиве
     public static int GetTotalMaxVolume(IEnumerable<Tank> tanks)
     {
+        if (tanks.Count() == 0)
+            throw new InvalidOperationException("Tanks has not been passed.");
+
         return tanks.Sum(tank => tank.MaxVolume);
     }
 }
