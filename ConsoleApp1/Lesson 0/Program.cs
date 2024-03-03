@@ -6,11 +6,19 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System;
+using System.Security;
 
 class ProgramZero
 {
     public static void Start()
     {
+        var userInteraction = new UserConsoleInteraction();
+
+        userInteraction.DataEntered += delegate (string message)
+        {
+            userInteraction.DisplayLine($"User entered \"{message}\" in {DateTime.Now.TimeOfDay}.");
+        };
+
         var workbook = new XLWorkbook("workBook.xlsx");
 
         IEnumerable<Tank> tanks = new List<Tank>();
@@ -24,11 +32,11 @@ class ProgramZero
         }
         catch (XLFormatException e)
         {
-            Console.WriteLine($"Something went wrong while parsing from excel: {e.Message}");
+            userInteraction.DisplayLine($"Something went wrong while parsing from excel: {e.Message}");
             return;
         }
 
-        Console.WriteLine($"Количество резервуаров: {tanks.Count()}, установок: {units.Count()}");
+        userInteraction.DisplayLine($"Количество резервуаров: {tanks.Count()}, установок: {units.Count()}");
         
         string tankName = "Резервуар 20";
         Unit foundUnit;
@@ -40,51 +48,50 @@ class ProgramZero
             try
             {
                 var factory = FindFactory(factories, foundUnit);
-                Console.WriteLine($"Резервуар 2 принадлежит установке {foundUnit.Name} и заводу {factory.Name}.");
+                userInteraction.DisplayLine($"Резервуар 2 принадлежит установке {foundUnit.Name} и заводу {factory.Name}.");
             }
             catch (Exception e) when (e is ArgumentNullException || e is InvalidOperationException)
             {
-                Console.WriteLine($"Error when searching for the factory: {e.Message}.");
+                userInteraction.DisplayLine($"Error when searching for the factory: {e.Message}.");
             }
         }
         catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
         {
-            Console.WriteLine($"Error when searching for the unit: {e.Message}.");
+            userInteraction.DisplayLine($"Error when searching for the unit: {e.Message}.");
         }
 
         try
         {
             var totalVolume = GetTotalMaxVolume(tanks);
-            Console.WriteLine($"Общий объем резервуаров: {totalVolume}.");
+            userInteraction.DisplayLine($"Общий объем резервуаров: {totalVolume}.");
         }
         catch (InvalidOperationException e)
         {
-            Console.WriteLine($"Error while getting total max tanks capacity: {e.Message}.");
+            userInteraction.DisplayLine($"Error while getting total max tanks capacity: {e.Message}.");
         }
 
         try
         {
-            PrintTanksFullInfo(tanks, units, factories);
+            PrintTanksFullInfo(tanks, units, factories, userInteraction);
         }
         catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
         {
-            Console.WriteLine($"Error while printing tanks full info: {e.Message}.");
+            userInteraction.DisplayLine($"Error while printing tanks full info: {e.Message}.");
         }
 
         try
         {
             int totalCurrentVolume = GetTotalCurrentVolume(tanks);
-            Console.WriteLine($"Текущий объем жидкости во всех резервуарах: {totalCurrentVolume}.");
+            userInteraction.DisplayLine($"Текущий объем жидкости во всех резервуарах: {totalCurrentVolume}.");
         }
         catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
         {
-            Console.WriteLine($"Error while getting total current tanks capacity: {e.Message}.");
+            userInteraction.DisplayLine($"Error while getting total current tanks capacity: {e.Message}.");
         }
 
-        Console.Write("Введите название объекта для поиска: ");
-        string nameToFind = Console.ReadLine();
+        string nameToFind = userInteraction.RequestInput("Введите название объекта для поиска: ");
 
-        if (nameToFind is not null)
+        if (nameToFind != string.Empty)
         {
             try
             {
@@ -95,53 +102,68 @@ class ProgramZero
                 {
                     if (nameable is Factory factory)
                     {
-                        Console.WriteLine($"Factory {factory.Name}, {factory.Description}.");
+                        userInteraction.DisplayLine($"Factory {factory.Name}, {factory.Description}.");
                     }
                     else if (nameable is Unit unit)
                     {
                         try
                         {
-                            Console.WriteLine($"Unit {unit.Name}, {unit.Description} located on factory {FindFactory(factories, unit).Name}.");
+                            userInteraction.DisplayLine($"Unit {unit.Name}, {unit.Description} located on factory {FindFactory(factories, unit).Name}.");
                         }
                         catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
                         {
-                            Console.WriteLine($"Error while getting factory for found unit ID={unit.Id}: {e.Message}");
+                            userInteraction.DisplayLine($"Error while getting factory for found unit ID={unit.Id}: {e.Message}");
                         }
                     }
                     else if (nameable is Tank tank)
                     {
                         try
                         {
-                            Console.WriteLine($"Tank {tank.Name}, {tank.Description} (volume {tank.Volume}/{tank.MaxVolume}) in unit {FindUnit(units, tank).Name}.");
+                            userInteraction.DisplayLine($"Tank {tank.Name}, {tank.Description} (volume {tank.Volume}/{tank.MaxVolume}) in unit {FindUnit(units, tank).Name}.");
                         }
                         catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
                         {
-                            Console.WriteLine($"Error while getting unit for found tank ID={tank.Id}: {e.Message}");
+                            userInteraction.DisplayLine($"Error while getting unit for found tank ID={tank.Id}: {e.Message}");
                         }
                     }
                     else
                     {
-                        Console.WriteLine("Got unexpected object type for the specified input.");
+                        userInteraction.DisplayLine("Got unexpected object type for the specified input.");
                     }
                 }
             }
             catch (ArgumentException e)
             {
-                Console.WriteLine($"Error while searching for object: {e.Message}.");
+                userInteraction.DisplayLine($"Error while searching for object: {e.Message}.");
             }
 
         }
         else
         {
-            Console.WriteLine("The input is empty.");
+            userInteraction.DisplayLine("The input is empty.");
         }
 
-        Dictionary<string, object> savingData = new Dictionary<string, object>() {
-            { "factories", factories },
-            { "units", units },
-            { "tanks", tanks }
-        };
-        SaveToJsonFile(savingData, "fullData.json");
+        try
+        {
+            Dictionary<string, object> savingData = new Dictionary<string, object>() {
+                { "factories", factories },
+                { "units", units },
+                { "tanks", tanks }
+            };
+            SaveToJsonFile(savingData, "fullData.json");
+        }
+        catch (Exception e) when (e is SecurityException || e is UnauthorizedAccessException)
+        {
+            userInteraction.DisplayLine($"File acces error: {e.Message}");
+        }
+        catch (DirectoryNotFoundException e)
+        {
+            userInteraction.DisplayLine($"Specified directory was not found: {e.Message}");
+        }
+        catch (PathTooLongException e)
+        {
+            userInteraction.DisplayLine($"Path is too long: {e.Message}");
+        }
     }
 
     public static void SaveToJsonFile(object savingData, string fileName)
@@ -154,7 +176,6 @@ class ProgramZero
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true
             });
-            Console.WriteLine($"Data has been saved to file: {stream.Name}.");
         }
     }
 
@@ -181,7 +202,7 @@ class ProgramZero
             if (!headerCell.TryGetValue<string>(out headerValue))
                 throw new XLFormatException($"Table header value {headerCell.Address.ToString(XLReferenceStyle.Default, true)} has unexpected type.");
 
-            tableHeaderCellsValues.Append(headerValue);
+            tableHeaderCellsValues.Add(headerValue);
         }
 
         TableObjectsCreator<T> configuredCreator;
@@ -239,14 +260,14 @@ class ProgramZero
         return objects;
     }
 
-    public static void PrintTanksFullInfo(IEnumerable<Tank> tanks, IEnumerable<Unit> units, IEnumerable<Factory> factories)
+    public static void PrintTanksFullInfo(IEnumerable<Tank> tanks, IEnumerable<Unit> units, IEnumerable<Factory> factories, IUserInteraction userInteraction)
     {
         foreach (Tank tank in tanks)
         {
             Unit unit = FindUnit(units, tank);
             Factory factory = FindFactory(factories, unit);
 
-            Console.WriteLine($"{tank.Name}, {tank.Description}: объем - {tank.Volume}/{tank.MaxVolume}; установка - {unit.Name}; завод - {factory.Name}");
+            userInteraction.DisplayLine($"{tank.Name}, {tank.Description}: объем - {tank.Volume}/{tank.MaxVolume}; установка - {unit.Name}; завод - {factory.Name}");
         }
     }
 
